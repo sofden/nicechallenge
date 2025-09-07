@@ -26,6 +26,7 @@
     .danger{color:#f38ba8;font-weight:700}
     .winner{color:#a6e3a1;font-weight:700}
     .leader{display:flex;flex-wrap:wrap;gap:8px}
+    .stats{display:flex;flex-wrap:wrap;gap:8px}
     .days-bar{display:flex;gap:8px;overflow:auto;padding-bottom:4px}
     .days-bar::-webkit-scrollbar{height:6px}
     .days-bar::-webkit-scrollbar-thumb{background:#2a3042;border-radius:999px}
@@ -45,6 +46,13 @@
       <h3>Текущие баллы</h3>
       <div id="scoreList" class="leader muted" style="margin-bottom:8px"></div>
 
+      <!-- СРЕДНИЕ МИНУТЫ -->
+      <div id="avgBlock" style="margin:6px 0 12px">
+        <h3>Средние минуты</h3>
+        <div id="avgList" class="stats"></div>
+        <p class="note" id="avgNote"></p>
+      </div>
+
       <hr>
 
       <!-- УЧАСТНИКИ -->
@@ -61,11 +69,19 @@
 
       <hr>
 
+      <!-- НАСТРОЙКИ ЧЕЛЛЕНДЖА -->
+      <h3>Челлендж</h3>
+      <div class="row" style="margin-bottom:8px">
+        <label>Дата начала:&nbsp;<input type="date" id="startPicker" /></label>
+        <button onclick="applyStartDate()">Применить дату начала</button>
+        <span class="spacer"></span>
+        <span class="note">Все дни от даты начала до сегодня создаются автоматически. При навигации новый день создаётся сам.</span>
+      </div>
+
       <!-- ДНИ -->
-      <h3>Дни</h3>
       <div class="row" style="margin-bottom:8px">
         <input type="date" id="dayPicker" />
-        <button onclick="createOrOpenDay()">Открыть / создать день</button>
+        <button onclick="openDay()">Открыть день</button>
         <button onclick="gotoPrevDay()">← Предыдущий</button>
         <button onclick="gotoNextDay()">Следующий →</button>
         <span class="spacer"></span>
@@ -98,13 +114,14 @@
   </div>
 
   <script>
-    const STORAGE_KEY = 'instaChallenge.v4'; // bump версия для чистого запуска
+    const STORAGE_KEY = 'instaChallenge.v5';
 
     let state = {
       players: [], // [{name, score}]
-      // days: { [isoDate]: { data: { [playerName]: number|null }, submitted: boolean, winners: string[], _submitting?: boolean } }
+      // days: { [isoDate]: { data: { [playerName]: number|null }, submitted: boolean, winners: string[] } }
       days: {},
-      activeDate: null
+      activeDate: null,
+      startDate: null
     };
 
     // utils
@@ -120,13 +137,59 @@
     const load = () => { try { const v = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (v && typeof v==='object') state = v; } catch(e){} };
 
     load();
-    renderAll();
-    if (!$('#dayPicker').value) $('#dayPicker').value = state.activeDate || todayISO();
 
-    // renderers
+    // init defaults
+    if (!state.startDate) state.startDate = todayISO();
+    ensureDaysUpToToday(); // авто-создание всех дней от старта до сегодня
+    if (!state.activeDate) state.activeDate = todayISO();
+
+    // set inputs
+    const startPicker = $('#startPicker');
+    startPicker.value = state.startDate;
+    const dayPicker = $('#dayPicker');
+    dayPicker.value = state.activeDate;
+
+    renderAll();
+
+    // ---- core day helpers ----
+    function ensureDay(d) {
+      if (!state.days[d]) {
+        const data = {};
+        state.players.forEach(p => data[p.name] = null);
+        state.days[d] = { data, submitted:false, winners:[] };
+      } else {
+        // если добавили нового игрока — досинхроним поля
+        state.players.forEach(p => {
+          if (!(p.name in state.days[d].data)) {
+            state.days[d].data[p.name] = state.days[d].submitted ? 0 : null;
+          }
+        });
+      }
+    }
+
+    function dateRangeISO(fromISO, toISO) {
+      const res = [];
+      let d = new Date(fromISO+'T00:00:00');
+      const end = new Date(toISO+'T00:00:00');
+      while (d <= end) {
+        res.push(iso(d));
+        d.setDate(d.getDate()+1);
+      }
+      return res;
+    }
+
+    function ensureDaysUpToToday() {
+      const start = state.startDate || todayISO();
+      const daysList = dateRangeISO(start, todayISO());
+      daysList.forEach(ensureDay);
+      save();
+    }
+
+    // ---- renderers ----
     function renderAll() {
       renderPlayers();
       renderScores();
+      renderAverages();
       renderDaysBar();
       renderActiveDayPanel();
     }
@@ -154,6 +217,46 @@
         });
     }
 
+    function calcAverages() {
+      // считаем по ПОДТВЕРЖДЁННЫМ дням
+      const submittedDates = Object.keys(state.days).filter(d => state.days[d].submitted);
+      const totals = new Map(); // name -> {sum, count}
+      state.players.forEach(p => totals.set(p.name, {sum:0, count:0}));
+      submittedDates.forEach(d => {
+        const data = state.days[d].data;
+        state.players.forEach(p => {
+          const v = data[p.name];
+          if (Number.isFinite(v)) {
+            const t = totals.get(p.name);
+            t.sum += v;
+            t.count += 1;
+          }
+        });
+      });
+      const rows = state.players.map(p => {
+        const t = totals.get(p.name);
+        const avg = t.count ? t.sum / t.count : 0;
+        return { name:p.name, avg, sum:t.sum, count:t.count };
+      });
+      return { rows, submittedCount: submittedDates.length };
+    }
+
+    function renderAverages() {
+      const { rows, submittedCount } = calcAverages();
+      const list = $('#avgList');
+      const note = $('#avgNote');
+      list.innerHTML = '';
+      rows.forEach(r => {
+        const chip = document.createElement('span');
+        chip.className = 'pill';
+        chip.textContent = `${r.name}: ${r.avg.toFixed(1)} мин (за ${r.count} дн., Σ ${r.sum} мин)`;
+        list.appendChild(chip);
+      });
+      note.textContent = submittedCount
+        ? `Среднее считается по подтверждённым дням: всего подтверждено ${submittedCount}.`
+        : `Пока нет подтверждённых дней — средние равны 0.`;
+    }
+
     function renderDaysBar() {
       const bar = $('#daysBar');
       bar.innerHTML = '';
@@ -162,7 +265,7 @@
         const chip = document.createElement('button');
         chip.className = 'pill small';
         chip.textContent = d;
-        chip.onclick = () => { state.activeDate = d; save(); renderAll(); };
+        chip.onclick = () => { state.activeDate = d; $('#dayPicker').value = d; save(); renderAll(); };
         if (state.activeDate === d) chip.classList.add('active');
         const badge = document.createElement('span');
         badge.className = 'note';
@@ -235,15 +338,16 @@
       }
     }
 
-    // participants
+    // ---- participants ----
     function addPlayer() {
       const el = $('#newPlayer');
       const name = (el.value || '').trim();
       if (!name) return;
       if (state.players.find(p => p.name.toLowerCase() === name.toLowerCase())) { alert('Такой участник уже есть'); return; }
       state.players.push({ name, score: 0 });
-      // sync with existing days
-      Object.values(state.days).forEach(day => {
+      // sync all days
+      Object.keys(state.days).forEach(d => {
+        const day = state.days[d];
         if (!(name in day.data)) day.data[name] = day.submitted ? 0 : null;
       });
       el.value = '';
@@ -266,23 +370,32 @@
 
     function resetAll() {
       if (!confirm('Полный сброс: участники, дни, баллы — ВСЁ будет удалено. Продолжить?')) return;
-      state = { players: [], days: {}, activeDate: null };
+      state = { players: [], days: {}, activeDate: null, startDate: todayISO() };
+      ensureDaysUpToToday();
       save();
       renderAll();
     }
 
-    // days
-    function createOrOpenDay() {
-      if (state.players.length === 0) { alert('Добавьте участников'); return; }
-      const dp = $('#dayPicker');
-      let d = dp.value || todayISO();
-      dp.value = d;
-
-      if (!state.days[d]) {
-        const data = {};
-        state.players.forEach(p => data[p.name] = null);
-        state.days[d] = { data, submitted:false, winners:[] };
+    // ---- challenge settings ----
+    function applyStartDate() {
+      const val = $('#startPicker').value || todayISO();
+      if (val > todayISO()) { alert('Дата начала не может быть в будущем'); return; }
+      state.startDate = val;
+      ensureDaysUpToToday();
+      // если активная дата раньше старта — сдвинем на старт
+      if (!state.activeDate || state.activeDate < state.startDate) {
+        state.activeDate = state.startDate;
+        $('#dayPicker').value = state.activeDate;
       }
+      save();
+      renderAll();
+    }
+
+    // ---- days navigation / open ----
+    function openDay() {
+      let d = $('#dayPicker').value || todayISO();
+      // авто-создание дня при открытии
+      ensureDay(d);
       state.activeDate = d;
       save();
       renderAll();
@@ -291,32 +404,40 @@
     function gotoPrevDay() {
       const keys = Object.keys(state.days).sort();
       if (!keys.length) return;
-      const idx = Math.max(0, keys.indexOf(state.activeDate));
-      const prev = keys[idx-1] ?? keys[0];
-      state.activeDate = prev;
-      $('#dayPicker').value = prev;
+      let idx = keys.indexOf(state.activeDate);
+      if (idx <= 0) idx = 0; else idx -= 1;
+      state.activeDate = keys[idx];
+      $('#dayPicker').value = state.activeDate;
       save(); renderAll();
     }
 
     function gotoNextDay() {
+      // если движемся вперёд за сегодня — создадим новый день (чтобы «идёт каждый день» работало по факту)
+      const today = todayISO();
+      ensureDaysUpToToday(); // на всякий — этот вызов следит, что до today всё создано
+
       const keys = Object.keys(state.days).sort();
       if (!keys.length) return;
-      const idx = Math.max(0, keys.indexOf(state.activeDate));
-      const next = keys[idx+1] ?? keys[keys.length-1];
-      state.activeDate = next;
-      $('#dayPicker').value = next;
+      let idx = keys.indexOf(state.activeDate);
+      if (idx < 0) idx = keys.length-1;
+      if (idx >= keys.length-1) {
+        // если мы были на последнем (скорее всего сегодня) — остаёмся
+        state.activeDate = keys[keys.length-1];
+      } else {
+        state.activeDate = keys[idx+1];
+      }
+      $('#dayPicker').value = state.activeDate;
       save(); renderAll();
     }
 
-    // NEW: редактура дня — откат начисленных баллов и перевод в режим редактирования
+    // ---- edit / submit day ----
     function enableEditActiveDay() {
       const d = state.activeDate;
       if (!d) return;
       const obj = state.days[d];
-      if (!obj) return;
-      if (!obj.submitted) return; // и так редактируется
+      if (!obj || !obj.submitted) return;
 
-      // Откатываем баллы, начисленные за этот день
+      // откат баллов
       if (Array.isArray(obj.winners)) {
         obj.winners.forEach(name => {
           const pl = state.players.find(p => p.name === name);
@@ -324,32 +445,31 @@
         });
       }
 
-      // Сбрасываем статус дня
       obj.submitted = false;
       obj.winners = [];
       delete obj._submitting;
 
       save();
       renderScores();
-      renderActiveDayPanel(); // теперь кнопка "Подтвердить" снова активна
+      renderAverages();
+      renderActiveDayPanel();
       renderDaysBar();
     }
 
-    // защита от повторных подтверждений: ставим флаг и блокируем кнопку сразу
     function submitActiveDay() {
       const btn = $('#submitBtn');
-      btn.disabled = true; // мгновенно блокируем от повторных кликов
+      btn.disabled = true;
 
       const d = state.activeDate;
       if (!d) return;
       const obj = state.days[d];
       if (!obj) return;
 
-      if (obj._submitting) return;           // защита от многократных вызовов
-      if (obj.submitted) return;             // уже подтверждён — нечего делать
+      if (obj._submitting) return;
+      if (obj.submitted) return;
       obj._submitting = true;
 
-      // Проверяем заполнение
+      // validate
       let ok = true;
       state.players.forEach(p => {
         const v = obj.data[p.name];
@@ -358,16 +478,15 @@
       if (!ok) {
         alert('Заполните минуты для всех участников');
         obj._submitting = false;
-        btn.disabled = false; // вернуть возможность после исправления
+        btn.disabled = false;
         return;
       }
 
-      // Находим победителей
+      // winners (min)
       const vals = Object.values(obj.data);
       const minV = Math.min(...vals);
       const winners = Object.entries(obj.data).filter(([,v]) => v === minV).map(([name]) => name);
 
-      // Начисляем баллы
       winners.forEach(n => {
         const pl = state.players.find(p => p.name === n);
         if (pl) pl.score += 1;
@@ -379,32 +498,50 @@
 
       save();
 
-      alert(winners.length===1
-        ? `Победитель дня (${fmtDate(d)}): ${winners[0]}`
-        : `Победители дня (${fmtDate(d)}): ${winners.join(', ')}`);
+      alert(winners.length===1 ? `Победитель дня (${fmtDate(d)}): ${winners[0]}`
+                               : `Победители дня (${fmtDate(d)}): ${winners.join(', ')}`);
 
       renderScores();
-      renderActiveDayPanel(); // здесь "Подтвердить" станет disabled, "Редактировать" — enabled
+      renderAverages();
+      renderActiveDayPanel();
       renderDaysBar();
     }
 
-    // finish / payouts
+    // ---- finish / payouts (+ 2-е место по среднему) ----
     function finishChallenge() {
       if (!state.players.length) return;
+      // 1) Победитель по баллам
       const maxScore = Math.max(...state.players.map(p => p.score));
       const top = state.players.filter(p => p.score === maxScore);
       const firstWinner = top[0];
       const prize = firstWinner.score * 100;
 
+      // 2) Второе место по минимальному среднему (среди всех участников)
+      const { rows } = calcAverages();
+      const sortedByAvg = rows.slice().sort((a,b)=> a.avg - b.avg || a.name.localeCompare(b.name));
+      const bestAvg = sortedByAvg[0]; // минимальный средний
+      const secondPlaceName = bestAvg?.name || null;
+
       const losers = state.players.filter(p => !top.includes(p));
       let html = `<h3>Финальный результат</h3>`;
 
+      // Победитель (баллы)
       if (top.length === 1) {
-        html += `<p>Победитель: <span class="winner">${firstWinner.name}</span> — ${firstWinner.score} баллов. Приз: <b>${prize} ₽</b></p>`;
+        html += `<p>1 место (по баллам): <span class="winner">${firstWinner.name}</span> — ${firstWinner.score} баллов. Приз: <b>${prize} ₽</b></p>`;
       } else {
         const names = top.map(p=>p.name).join(', ');
-        html += `<p>Победители: <span class="winner">${names}</span> — по ${maxScore} баллов.</p>`;
-        html += `<p class="note">Ниже выплаты рассчитаны по призу первого победителя: <b>${prize} ₽</b> (правило можно изменить).</p>`;
+        html += `<p>1 место (по баллам): <span class="winner">${names}</span> — по ${maxScore} баллов.</p>`;
+        html += `<p class="note">Выплаты ниже рассчитаны по призу первого победителя: <b>${prize} ₽</b> (правило можно изменить).</p>`;
+      }
+
+      // Второе место (по среднему), если это не тот же участник, что 1-е место-одиночка
+      if (secondPlaceName) {
+        const sameAsFirstSolo = (top.length === 1 && secondPlaceName === firstWinner.name);
+        if (!sameAsFirstSolo) {
+          const r = rows.find(x => x.name === secondPlaceName);
+          const avgStr = r ? `${r.avg.toFixed(1)} мин (за ${r.count} дн., Σ ${r.sum} мин)` : '';
+          html += `<p>2 место (по минимальному среднему): <span class="winner">${secondPlaceName}</span> — ${avgStr}. Приза нет.</p>`;
+        }
       }
 
       if (!losers.length) {
@@ -413,6 +550,7 @@
         return;
       }
 
+      // выплаты (обратная пропорция)
       const weights = losers.map(p => 1 / (p.score || 1));
       const sumW = weights.reduce((a,b)=>a+b, 0);
 
