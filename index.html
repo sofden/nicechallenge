@@ -7,9 +7,9 @@
   <style>
     :root { --bg:#0b0c10; --card:#151821; --text:#e8ecf1; --muted:#9aa3af; --accent:#4fd1c5; --border:#232734; }
     *{box-sizing:border-box}
-    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; background:var(--bg); color:var(--text); }
-    .wrap { max-width:900px; margin:40px auto; padding:0 16px; }
-    .card { background:var(--card); border-radius:16px; padding:20px; box-shadow:0 6px 24px rgba(0,0,0,.25); }
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    .wrap{max-width:960px;margin:40px auto;padding:0 16px}
+    .card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
     h2,h3{margin:0 0 12px}
     hr{border:0;height:1px;background:var(--border);margin:16px 0}
     .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -17,302 +17,379 @@
       background:#0f1320;color:var(--text);border:1px solid #2a3042;border-radius:10px;padding:10px 12px;outline:none
     }
     input[type="number"]{width:140px}
-    button{
-      background:var(--accent);color:#062e2b;border:0;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:600;transition:transform .05s ease
-    }
+    button{background:var(--accent);color:#062e2b;border:0;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:600;transition:transform .05s ease}
     button:active{transform:translateY(1px)}
-    .pill{display:inline-block;padding:6px 10px;background:#0f1320;border:1px solid #2a3042;border-radius:999px;margin:4px 6px 0 0}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;background:#0f1320;border:1px solid #2a3042;border-radius:999px;margin:4px 6px 0 0;white-space:nowrap}
+    .pill.small{padding:4px 8px;font-size:12px}
     .muted{color:var(--muted)}
     .danger{color:#f38ba8;font-weight:700}
     .winner{color:#a6e3a1;font-weight:700}
-    .days{display:grid;gap:10px}
-    details{
-      border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#0f1320
-    }
-    summary{list-style:none;padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px}
-    summary::-webkit-details-marker{display:none}
-    .badge{background:#22283a;border:1px solid #2a3042;border-radius:999px;padding:4px 8px;font-size:12px;color:var(--muted)}
-    .panel{padding:12px 14px;border-top:1px solid var(--border)}
-    .inputs-grid{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;max-width:520px}
-    .top-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
-    .footer-note{font-size:12px;color:var(--muted)}
+    .leader{display:flex;flex-wrap:wrap;gap:8px}
+    .days-bar{display:flex;gap:8px;overflow:auto;padding-bottom:4px}
+    .days-bar::-webkit-scrollbar{height:6px}
+    .days-bar::-webkit-scrollbar-thumb{background:#2a3042;border-radius:999px}
+    .active{outline:2px solid var(--accent)}
+    .grid{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;max-width:560px}
+    .spacer{flex:1}
+    .note{font-size:12px;color:var(--muted)}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
       <h2>Insta-Challenge</h2>
-      <p class="muted">Каждое утро участники вводят минуты. Минимальное время за день даёт +1 балл (если ничья — всем по баллу). В финале считаем победителя и выплаты.</p>
+      <p class="muted">Каждое утро участники вводят минуты. Минимум → +1 балл (при ничьей всем по баллу). В финале — выплаты по обратной пропорции.</p>
 
-      <!-- Участники -->
+      <!-- ЛИДЕРБОРД СВЕРХУ -->
+      <h3>Текущие баллы</h3>
+      <div id="scoreList" class="leader muted" style="margin-bottom:8px"></div>
+
+      <hr>
+
+      <!-- УЧАСТНИКИ (ввод один раз, сохраняется) -->
       <h3>Участники</h3>
-      <div class="row top-actions">
+      <div class="row" style="margin-bottom:8px">
         <input type="text" id="newPlayer" placeholder="Имя участника" />
         <button onclick="addPlayer()">Добавить</button>
-        <button onclick="resetAll()" title="Очистить всё">Сбросить</button>
+        <button onclick="clearPlayers()" title="Удалить всех участников (сохранив дни)">Очистить участников</button>
+        <span class="spacer"></span>
+        <button onclick="resetAll()" title="Полный сброс всего">Полный сброс</button>
       </div>
       <div id="playerList" class="row"></div>
+      <p class="note">Участники и баллы сохраняются локально (в вашем браузере). Перезагрузка не стирает данные.</p>
 
       <hr>
 
-      <!-- Дни -->
+      <!-- ДНИ: не копятся, выбранный день отображается в единственной панели -->
       <h3>Дни</h3>
-      <div class="row top-actions">
+      <div class="row" style="margin-bottom:8px">
         <input type="date" id="dayPicker" />
-        <button onclick="addOrOpenDay()">Добавить / открыть день</button>
-        <span class="footer-note">Дни показываются свернутыми. Нельзя добавить один и тот же день дважды.</span>
+        <button onclick="createOrOpenDay()">Открыть / создать день</button>
+        <button onclick="gotoPrevDay()">← Предыдущий</button>
+        <button onclick="gotoNextDay()">Следующий →</button>
+        <span class="spacer"></span>
+        <span class="note">Дни не копятся: редактируется только выбранная дата. Ниже — компактный список дней.</span>
       </div>
 
-      <div id="daysContainer" class="days"></div>
+      <!-- Компактная лента дней -->
+      <div id="daysBar" class="days-bar" style="margin-bottom:12px"></div>
 
-      <hr>
-
-      <!-- Счёт -->
-      <h3>Текущие баллы</h3>
-      <div id="scoreList" class="row muted"></div>
+      <!-- ЕДИНСТВЕННАЯ ПАНЕЛЬ ДНЯ -->
+      <div id="dayPanel">
+        <div class="row" style="margin-bottom:6px">
+          <strong id="dayTitle">День не выбран</strong>
+          <span id="dayBadge" class="pill small muted">—</span>
+        </div>
+        <div id="inputsGrid" class="grid"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="submitBtn" onclick="submitActiveDay()" disabled>Подтвердить день</button>
+          <button id="editBtn" onclick="enableEditActiveDay()" disabled>Редактировать день</button>
+        </div>
+      </div>
 
       <hr>
 
       <div class="row">
         <button onclick="finishChallenge()">Закончить челлендж</button>
       </div>
-      <div id="finalResult" style="margin-top:12px;"></div>
+      <div id="finalResult" style="margin-top:12px"></div>
     </div>
   </div>
 
   <script>
-    // --- state ---
-    let players = []; // {name, score}
-    // days: Map by ISO date -> { date, data: { [playerName]: minutes|null }, submitted: boolean, winners?: string[] }
-    const days = new Map();
+    // --- storage key ---
+    const STORAGE_KEY = 'instaChallenge.v3';
 
-    // --- helpers ---
-    const $ = sel => document.querySelector(sel);
-    const iso = d => d instanceof Date ? d.toISOString().slice(0,10) : String(d);
+    // --- state ---
+    let state = {
+      players: [], // [{name, score}]
+      // days: { [isoDate]: { data: { [playerName]: number|null }, submitted: boolean, winners: string[] } }
+      days: {},
+      activeDate: null
+    };
+
+    // --- utils ---
+    const $ = s => document.querySelector(s);
+    const iso = d => d instanceof Date ? d.toISOString().slice(0,10) : String(d || '').slice(0,10);
+    const todayISO = () => iso(new Date());
     const fmtDate = isod => {
+      if (!isod) return '';
       const dt = new Date(isod+'T00:00:00');
       return dt.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric', weekday:'short' });
     };
+    const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const load = () => {
+      try { const v = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (v && typeof v==='object') state = v; } catch(e){}
+    };
 
-    // --- participants ---
-    function addPlayer() {
-      const el = $('#newPlayer');
-      const name = (el.value || '').trim();
-      if (!name) return;
-      if (players.find(p => p.name === name)) { alert('Такой участник уже есть'); return; }
-      players.push({ name, score: 0 });
-      el.value = '';
+    // --- init ---
+    load();
+    renderAll();
+
+    // ensure picker value
+    const picker = $('#dayPicker');
+    if (!picker.value) picker.value = state.activeDate || todayISO();
+
+    // --- renderers ---
+    function renderAll() {
       renderPlayers();
       renderScores();
-      // Если есть уже созданные дни — добавим пустые поля для нового участника
-      days.forEach((dayObj, key) => {
-        dayObj.data[name] = dayObj.submitted ? (dayObj.data[name] ?? 0) : null;
-        refreshDayUI(key);
-      });
-    }
-
-    function resetAll() {
-      if (!confirm('Точно сбросить участников, дни и баллы?')) return;
-      players = [];
-      days.clear();
-      $('#playerList').innerHTML = '';
-      $('#daysContainer').innerHTML = '';
-      $('#scoreList').innerHTML = '';
-      $('#finalResult').innerHTML = '';
+      renderDaysBar();
+      renderActiveDayPanel();
     }
 
     function renderPlayers() {
       const box = $('#playerList');
       box.innerHTML = '';
-      players.forEach(p => {
-        const span = document.createElement('span');
-        span.className = 'pill';
-        span.textContent = p.name;
-        box.appendChild(span);
+      state.players.forEach(p => {
+        const tag = document.createElement('span');
+        tag.className = 'pill';
+        tag.textContent = p.name;
+        box.appendChild(tag);
       });
     }
 
     function renderScores() {
       const box = $('#scoreList');
       box.innerHTML = '';
-      players
-        .slice()
-        .sort((a,b)=> b.score - a.score || a.name.localeCompare(b.name))
+      state.players.slice().sort((a,b)=> b.score - a.score || a.name.localeCompare(b.name))
         .forEach(p => {
-          const span = document.createElement('span');
-          span.className = 'pill';
-          span.textContent = `${p.name}: ${p.score}`;
-          box.appendChild(span);
+          const chip = document.createElement('span');
+          chip.className = 'pill';
+          chip.textContent = `${p.name}: ${p.score}`;
+          box.appendChild(chip);
         });
     }
 
-    // --- days / calendar ---
-    function addOrOpenDay() {
-      if (players.length === 0) { alert('Добавьте участников'); return; }
-      const picker = $('#dayPicker');
-      let d = picker.value;
-      if (!d) {
-        // по умолчанию сегодня
-        d = iso(new Date());
-        picker.value = d;
-      }
-      if (!days.has(d)) {
-        // создать новый день (пока пустые минуты)
-        const data = {};
-        players.forEach(p => data[p.name] = null);
-        days.set(d, { date: d, data, submitted: false, winners: [] });
-        createDayUI(d);
-      }
-      // раскрыть существующий
-      const det = document.querySelector(`details[data-date="${d}"]`);
-      if (det) det.open = true;
+    function renderDaysBar() {
+      const bar = $('#daysBar');
+      bar.innerHTML = '';
+      const dates = Object.keys(state.days).sort(); // ISO ascending
+      dates.forEach(d => {
+        const chip = document.createElement('button');
+        chip.className = 'pill small';
+        chip.textContent = d;
+        chip.onclick = () => { state.activeDate = d; save(); renderAll(); };
+        if (state.activeDate === d) chip.classList.add('active');
+        // badge inside
+        const badge = document.createElement('span');
+        badge.className = 'note';
+        const obj = state.days[d];
+        badge.textContent = obj.submitted ? '✓' : '•';
+        chip.appendChild(badge);
+        bar.appendChild(chip);
+      });
     }
 
-    function createDayUI(isodate) {
-      const container = $('#daysContainer');
+    function renderActiveDayPanel() {
+      const title = $('#dayTitle');
+      const badge = $('#dayBadge');
+      const grid = $('#inputsGrid');
+      const submitBtn = $('#submitBtn');
+      const editBtn = $('#editBtn');
 
-      // создаём карточку дня
-      const details = document.createElement('details');
-      details.dataset.date = isodate;
-
-      const summary = document.createElement('summary');
-      summary.innerHTML = `
-        <strong>${fmtDate(isodate)}</strong>
-        <span class="badge" id="badge-${isodate}">не подтверждён</span>
-      `;
-      details.appendChild(summary);
-
-      const panel = document.createElement('div');
-      panel.className = 'panel';
-
-      const grid = document.createElement('div');
-      grid.className = 'inputs-grid';
-      grid.id = `grid-${isodate}`;
-      panel.appendChild(grid);
-
-      const actions = document.createElement('div');
-      actions.className = 'row';
-      const btn = document.createElement('button');
-      btn.textContent = 'Подтвердить день';
-      btn.onclick = () => submitDay(isodate);
-      actions.appendChild(btn);
-      panel.appendChild(actions);
-
-      details.appendChild(panel);
-
-      // вставляем по дате, чтобы список был отсортирован (свежие сверху)
-      const all = Array.from(container.children);
-      const insertIdx = all.findIndex(el => (el.dataset.date || '') < isodate); // ISO сортируется лексикографически
-      if (insertIdx === -1) container.appendChild(details);
-      else container.insertBefore(details, all[insertIdx]);
-
-      refreshDayUI(isodate);
-    }
-
-    function refreshDayUI(isodate) {
-      const dayObj = days.get(isodate);
-      const grid = $(`#grid-${isodate}`);
-      const badge = $(`#badge-${isodate}`);
       grid.innerHTML = '';
+      submitBtn.disabled = true;
+      editBtn.disabled = true;
 
-      players.forEach(p => {
+      if (!state.activeDate || !state.days[state.activeDate]) {
+        title.textContent = 'День не выбран';
+        badge.textContent = '—';
+        badge.className = 'pill small muted';
+        return;
+      }
+
+      const obj = state.days[state.activeDate];
+      title.textContent = `${fmtDate(state.activeDate)} (${state.activeDate})`;
+
+      if (obj.submitted) {
+        badge.textContent = obj.winners && obj.winners.length ? `победители: ${obj.winners.join(', ')}` : 'подтверждён';
+        badge.className = 'pill small';
+      } else {
+        badge.textContent = 'не подтверждён';
+        badge.className = 'pill small muted';
+      }
+
+      // single compact grid
+      state.players.forEach(p => {
         const label = document.createElement('div');
         label.textContent = p.name;
 
-        const inputWrap = document.createElement('div');
-        if (!dayObj.submitted) {
+        const cell = document.createElement('div');
+        if (obj.submitted) {
+          const chip = document.createElement('span');
+          chip.className = 'pill';
+          chip.textContent = `${obj.data[p.name] ?? 0} мин`;
+          cell.appendChild(chip);
+        } else {
           const input = document.createElement('input');
           input.type = 'number';
           input.min = '0';
           input.placeholder = 'минуты';
-          input.value = dayObj.data[p.name] ?? '';
+          input.value = obj.data[p.name] ?? '';
           input.oninput = e => {
-            const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
-            dayObj.data[p.name] = Number.isFinite(val) ? val : null;
+            const v = e.target.value === '' ? null : parseInt(e.target.value, 10);
+            obj.data[p.name] = Number.isFinite(v) ? v : null;
+            save();
           };
-          inputWrap.appendChild(input);
-        } else {
-          const pill = document.createElement('span');
-          pill.className = 'pill';
-          const v = dayObj.data[p.name];
-          pill.textContent = `${v} мин`;
-          inputWrap.appendChild(pill);
+          cell.appendChild(input);
         }
-
         grid.appendChild(label);
-        grid.appendChild(inputWrap);
+        grid.appendChild(cell);
       });
 
-      if (!dayObj.submitted) {
-        badge.textContent = 'не подтверждён';
+      if (obj.submitted) {
+        editBtn.disabled = false;
       } else {
-        const w = dayObj.winners || [];
-        badge.textContent = w.length ? `победители: ${w.join(', ')}` : 'подтверждён';
+        submitBtn.disabled = false;
       }
     }
 
-    function submitDay(isodate) {
-      const dayObj = days.get(isodate);
-      if (!dayObj) return;
-
-      // проверяем, что все поля заполнены числами
-      let allFilled = true;
-      players.forEach(p => {
-        const v = dayObj.data[p.name];
-        if (v === null || Number.isNaN(v)) allFilled = false;
+    // --- participants ---
+    function addPlayer() {
+      const el = $('#newPlayer');
+      const name = (el.value || '').trim();
+      if (!name) return;
+      if (state.players.find(p => p.name.toLowerCase() === name.toLowerCase())) { alert('Такой участник уже есть'); return; }
+      state.players.push({ name, score: 0 });
+      // ensure new name exists in all days
+      Object.values(state.days).forEach(day => {
+        if (!(name in day.data)) day.data[name] = day.submitted ? 0 : null;
       });
-      if (!allFilled) { alert('Заполните минуты для всех участников'); return; }
+      el.value = '';
+      save();
+      renderAll();
+    }
 
-      // считаем победителей (минимум)
-      const values = Object.values(dayObj.data);
-      const minMinutes = Math.min(...values);
-      const winners = Object.entries(dayObj.data)
-        .filter(([, mins]) => mins === minMinutes)
-        .map(([name]) => name);
+    function clearPlayers() {
+      if (!confirm('Удалить всех участников? Дни останутся, но их данные обнулятся.')) return;
+      // wipe players and purge per-day data
+      state.players = [];
+      Object.values(state.days).forEach(day => {
+        day.data = {};
+        day.winners = [];
+        day.submitted = false;
+      });
+      save();
+      renderAll();
+    }
 
-      winners.forEach(name => {
-        const pl = players.find(p => p.name === name);
+    function resetAll() {
+      if (!confirm('Полный сброс: участники, дни, баллы — ВСЁ будет удалено. Продолжить?')) return;
+      state = { players: [], days: {}, activeDate: null };
+      save();
+      renderAll();
+    }
+
+    // --- days ---
+    function createOrOpenDay() {
+      if (state.players.length === 0) { alert('Добавьте участников'); return; }
+      const dp = $('#dayPicker');
+      let d = dp.value || todayISO();
+      dp.value = d;
+
+      if (!state.days[d]) {
+        const data = {};
+        state.players.forEach(p => data[p.name] = null);
+        state.days[d] = { data, submitted:false, winners:[] };
+      }
+      state.activeDate = d;
+      save();
+      renderAll();
+    }
+
+    function gotoPrevDay() {
+      const keys = Object.keys(state.days).sort();
+      if (!keys.length) return;
+      const idx = Math.max(0, keys.indexOf(state.activeDate));
+      const prev = keys[idx-1] ?? keys[0];
+      state.activeDate = prev;
+      $('#dayPicker').value = prev;
+      save(); renderAll();
+    }
+
+    function gotoNextDay() {
+      const keys = Object.keys(state.days).sort();
+      if (!keys.length) return;
+      const idx = Math.max(0, keys.indexOf(state.activeDate));
+      const next = keys[idx+1] ?? keys[keys.length-1];
+      state.activeDate = next;
+      $('#dayPicker').value = next;
+      save(); renderAll();
+    }
+
+    function enableEditActiveDay() {
+      const d = state.activeDate;
+      if (!d) return;
+      const obj = state.days[d];
+      if (!obj) return;
+      obj.submitted = false;
+      obj.winners = [];
+      save();
+      renderActiveDayPanel();
+    }
+
+    function submitActiveDay() {
+      const d = state.activeDate;
+      if (!d) return;
+      const obj = state.days[d];
+      if (!obj) return;
+
+      // validate all filled
+      let ok = true;
+      state.players.forEach(p => {
+        const v = obj.data[p.name];
+        if (v === null || Number.isNaN(v)) ok = false;
+      });
+      if (!ok) { alert('Заполните минуты для всех участников'); return; }
+
+      // winners by minimum
+      const vals = Object.values(obj.data);
+      const minV = Math.min(...vals);
+      const winners = Object.entries(obj.data).filter(([,v]) => v === minV).map(([name]) => name);
+
+      winners.forEach(n => {
+        const pl = state.players.find(p => p.name === n);
         if (pl) pl.score += 1;
       });
 
-      dayObj.submitted = true;
-      dayObj.winners = winners;
+      obj.submitted = true;
+      obj.winners = winners;
+      save();
 
-      alert(winners.length === 1
-        ? `Победитель дня (${fmtDate(isodate)}): ${winners[0]}`
-        : `Победители дня (${fmtDate(isodate)}): ${winners.join(', ')}`);
+      alert(winners.length===1 ? `Победитель дня (${fmtDate(d)}): ${winners[0]}` :
+                                 `Победители дня (${fmtDate(d)}): ${winners.join(', ')}`);
 
       renderScores();
-      refreshDayUI(isodate);
+      renderActiveDayPanel();
+      renderDaysBar();
     }
 
-    // --- finish ---
+    // --- finish / payouts ---
     function finishChallenge() {
-      if (players.length === 0) return;
-
-      const maxScore = Math.max(...players.map(p => p.score));
-      const top = players.filter(p => p.score === maxScore);
-      const winnerNames = top.map(p => p.name).join(', ');
+      if (!state.players.length) return;
+      const maxScore = Math.max(...state.players.map(p => p.score));
+      const top = state.players.filter(p => p.score === maxScore);
       const firstWinner = top[0];
       const prize = firstWinner.score * 100;
 
-      const losers = players.filter(p => !top.includes(p));
+      const losers = state.players.filter(p => !top.includes(p));
       let html = `<h3>Финальный результат</h3>`;
 
       if (top.length === 1) {
         html += `<p>Победитель: <span class="winner">${firstWinner.name}</span> — ${firstWinner.score} баллов. Приз: <b>${prize} ₽</b></p>`;
       } else {
-        html += `<p>Победители: <span class="winner">${winnerNames}</span> — по ${maxScore} баллов.</p>`;
-        html += `<p class="muted">Для расчёта выплат ниже используется приз, рассчитанный по первому победителю: <b>${prize} ₽</b> (при необходимости можно изменить правило).</p>`;
+        const names = top.map(p=>p.name).join(', ');
+        html += `<p>Победители: <span class="winner">${names}</span> — по ${maxScore} баллов.</p>`;
+        html += `<p class="note">Ниже выплаты рассчитаны по призу первого победителя: <b>${prize} ₽</b> (правило можно изменить).</p>`;
       }
 
-      if (losers.length === 0) {
+      if (!losers.length) {
         html += `<p class="muted">Проигравших нет — никто не платит 🙂</p>`;
         $('#finalResult').innerHTML = html;
         return;
       }
 
-      // обратная пропорция (вес = 1 / score; если 0 → вес = 1)
       const weights = losers.map(p => 1 / (p.score || 1));
       const sumW = weights.reduce((a,b)=>a+b, 0);
 
