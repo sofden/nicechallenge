@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Insta-Challenge</title>
+  <style>
+    :root { --bg:#0b0c10; --card:#151821; --text:#e8ecf1; --muted:#9aa3af; --accent:#4fd1c5; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:880px; margin:40px auto; padding:0 16px; }
+    .card { background:var(--card); border-radius:16px; padding:20px; box-shadow:0 6px 24px rgba(0,0,0,.25); }
+    h2,h3,h4 { margin:0 0 12px; }
+    hr { border:0; height:1px; background:#232734; margin:16px 0; }
+    input[type="text"], input[type="number"]{
+      background:#0f1320; color:var(--text); border:1px solid #2a3042; border-radius:10px;
+      padding:10px 12px; outline:none; width:260px; max-width:100%;
+    }
+    input[type="number"]{ width:200px; }
+    button{
+      background:var(--accent); color:#062e2b; border:0; border-radius:12px; padding:10px 14px;
+      cursor:pointer; font-weight:600; transition:transform .05s ease; margin-left:8px;
+    }
+    button:active{ transform:translateY(1px); }
+    ul{ padding-left:18px; }
+    .row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0; }
+    .pill{ display:inline-block; padding:6px 10px; background:#0f1320; border:1px solid #2a3042; border-radius:999px; margin:4px 6px 0 0; }
+    .muted{ color:var(--muted); }
+    .winner{ color:#a6e3a1; font-weight:700; }
+    .danger{ color:#f38ba8; font-weight:700; }
+    .footer-note{ font-size:12px; color:var(--muted); margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>Insta-Challenge</h2>
+      <p class="muted">Каждое утро участники вводят минуты из Instagram. Минимум за день — получает +1 балл. В конце считаем победителя и выплаты.</p>
+
+      <!-- Добавление участников -->
+      <h3>Участники</h3>
+      <div class="row">
+        <input type="text" id="newPlayer" placeholder="Имя участника" />
+        <button onclick="addPlayer()">Добавить участника</button>
+        <button onclick="resetAll()" title="Очистить всё">Сбросить</button>
+      </div>
+      <div id="playerList" class="row"></div>
+
+      <hr>
+
+      <!-- Ввод минут за день -->
+      <h3>Дни и минуты</h3>
+      <div class="row">
+        <button onclick="addDay()">Создать день</button>
+        <span class="footer-note">После ввода минут нажми «Подтвердить день».</span>
+      </div>
+      <div id="dayInputs"></div>
+
+      <hr>
+
+      <!-- Текущий счёт -->
+      <h3>Текущие баллы</h3>
+      <div id="scoreList" class="row muted"></div>
+
+      <hr>
+
+      <div class="row">
+        <button onclick="finishChallenge()">Закончить челлендж</button>
+      </div>
+      <div id="finalResult" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <script>
+    let players = []; // {name: string, score: number}
+    let days = [];    // каждый день: { playerName: minutes }
+
+    function addPlayer() {
+      const el = document.getElementById('newPlayer');
+      const name = el.value.trim();
+      if (!name) return;
+      if (players.find(p => p.name === name)) { alert("Такой участник уже есть"); return; }
+      players.push({ name, score: 0 });
+      updatePlayerList();
+      updateScoreList();
+      el.value = '';
+    }
+
+    function resetAll() {
+      if (!confirm("Точно сбросить участников, дни и баллы?")) return;
+      players = [];
+      days = [];
+      document.getElementById('playerList').innerHTML = '';
+      document.getElementById('dayInputs').innerHTML = '';
+      document.getElementById('scoreList').innerHTML = '';
+      document.getElementById('finalResult').innerHTML = '';
+    }
+
+    function updatePlayerList() {
+      const box = document.getElementById('playerList');
+      box.innerHTML = '';
+      players.forEach(p => {
+        const span = document.createElement('span');
+        span.className = 'pill';
+        span.textContent = p.name;
+        box.appendChild(span);
+      });
+    }
+
+    function addDay() {
+      if (players.length === 0) { alert("Добавьте участников"); return; }
+
+      const dayDiv = document.createElement('div');
+      const dayIndex = days.length;
+      dayDiv.id = 'day' + dayIndex;
+      dayDiv.style.margin = '14px 0';
+      dayDiv.innerHTML = `<h4 style="margin:0 0 8px">День ${dayIndex + 1}</h4>`;
+
+      players.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML = `
+          <label style="min-width:160px">${p.name}</label>
+          <input type="number" min="0" placeholder="минуты" id="day${dayIndex}_player_${p.name}">
+        `;
+        dayDiv.appendChild(row);
+      });
+
+      const actions = document.createElement('div');
+      actions.className = 'row';
+      const submitBtn = document.createElement('button');
+      submitBtn.textContent = 'Подтвердить день';
+      submitBtn.onclick = () => submitDay(dayIndex);
+      actions.appendChild(submitBtn);
+      dayDiv.appendChild(actions);
+
+      document.getElementById('dayInputs').appendChild(dayDiv);
+    }
+
+    function submitDay(dayIndex) {
+      let dayData = {};
+      let allFilled = true;
+
+      players.forEach(p => {
+        const field = document.getElementById(`day${dayIndex}_player_${p.name}`);
+        const val = parseInt(field.value, 10);
+        if (isNaN(val)) allFilled = false;
+        dayData[p.name] = val;
+      });
+
+      if (!allFilled) { alert("Заполните все поля"); return; }
+
+      days.push(dayData);
+
+      // Определяем победителей дня (минимум минут)
+      const minMinutes = Math.min(...Object.values(dayData));
+      const winners = Object.entries(dayData)
+        .filter(([_, mins]) => mins === minMinutes)
+        .map(([name]) => name);
+
+      // Начисляем +1 балл каждому победителю дня
+      winners.forEach(name => {
+        const pl = players.find(p => p.name === name);
+        if (pl) pl.score += 1;
+      });
+
+      alert(winners.length === 1
+        ? `Победитель дня: ${winners[0]}`
+        : `Победители дня: ${winners.join(', ')}`);
+
+      updateScoreList();
+
+      // Лочим поля дня
+      document.querySelectorAll(`#day${dayIndex} input, #day${dayIndex} button`).forEach(el => el.disabled = true);
+    }
+
+    function updateScoreList() {
+      const box = document.getElementById('scoreList');
+      box.innerHTML = '';
+      players
+        .slice()
+        .sort((a,b)=> b.score - a.score || a.name.localeCompare(b.name))
+        .forEach(p => {
+          const span = document.createElement('span');
+          span.className = 'pill';
+          span.textContent = `${p.name}: ${p.score}`;
+          box.appendChild(span);
+        });
+    }
+
+    function finishChallenge() {
+      if (players.length === 0) return;
+
+      const maxScore = Math.max(...players.map(p => p.score));
+      const top = players.filter(p => p.score === maxScore);
+      const winnerNames = top.map(p => p.name).join(', ');
+
+      // Если несколько победителей — объявим общую победу и выставим суммарный приз на каждого (по правилам можно адаптировать)
+      const winner = top[0]; // берём первого для расчёта приза по изначальному правилу
+      const prize = winner.score * 100;
+
+      const losers = players.filter(p => !top.includes(p));
+      let html = `<h3>Финальный результат</h3>`;
+
+      if (top.length === 1) {
+        html += `<p>Победитель: <span class="winner">${winner.name}</span> — ${winner.score} баллов. Приз: <b>${prize} ₽</b></p>`;
+      } else {
+        html += `<p>Победители: <span class="winner">${winnerNames}</span> — по ${maxScore} баллов.</p>`;
+        html += `<p class="muted">Для расчёта выплат ниже используется приз, рассчитанный по первому победителю: <b>${prize} ₽</b> (можно адаптировать правило).</p>`;
+      }
+
+      if (losers.length === 0) {
+        html += `<p class="muted">Проигравших нет — никто не платит 🙂</p>`;
+        document.getElementById('finalResult').innerHTML = html;
+        return;
+      }
+
+      // Обратная пропорция: чем меньше баллов, тем больше платёж (вес = 1 / score; если 0 → вес = 1)
+      const weights = losers.map(p => 1 / (p.score || 1));
+      const sumW = weights.reduce((a,b)=>a+b, 0);
+
+      html += `<h4>Выплаты проигравших</h4><ul>`;
+      losers.forEach((p, i) => {
+        const pay = Math.round(prize * (weights[i] / sumW));
+        html += `<li><span class="danger">${p.name}</span> платит: <b>${pay} ₽</b> (баллы: ${p.score})</li>`;
+      });
+      html += `</ul>`;
+
+      document.getElementById('finalResult').innerHTML = html;
+    }
+  </script>
+</body>
+</html>
