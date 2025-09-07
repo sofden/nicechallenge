@@ -18,6 +18,7 @@
     }
     input[type="number"]{width:140px}
     button{background:var(--accent);color:#062e2b;border:0;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:600;transition:transform .05s ease}
+    button:disabled{opacity:.6;cursor:not-allowed}
     button:active{transform:translateY(1px)}
     .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;background:#0f1320;border:1px solid #2a3042;border-radius:999px;margin:4px 6px 0 0;white-space:nowrap}
     .pill.small{padding:4px 8px;font-size:12px}
@@ -38,7 +39,7 @@
   <div class="wrap">
     <div class="card">
       <h2>Insta-Challenge</h2>
-      <p class="muted">Каждое утро участники вводят минуты. Минимум → +1 балл (при ничьей всем по баллу). В финале — выплаты по обратной пропорции.</p>
+      <p class="muted">Каждое утро участники вводят минуты. Минимум → +1 балл (при ничьей — всем по баллу). В финале — выплаты по обратной пропорции.</p>
 
       <!-- ЛИДЕРБОРД СВЕРХУ -->
       <h3>Текущие баллы</h3>
@@ -46,7 +47,7 @@
 
       <hr>
 
-      <!-- УЧАСТНИКИ (ввод один раз, сохраняется) -->
+      <!-- УЧАСТНИКИ -->
       <h3>Участники</h3>
       <div class="row" style="margin-bottom:8px">
         <input type="text" id="newPlayer" placeholder="Имя участника" />
@@ -56,11 +57,11 @@
         <button onclick="resetAll()" title="Полный сброс всего">Полный сброс</button>
       </div>
       <div id="playerList" class="row"></div>
-      <p class="note">Участники и баллы сохраняются локально (в вашем браузере). Перезагрузка не стирает данные.</p>
+      <p class="note">Участники и данные сохраняются локально (в вашем браузере).</p>
 
       <hr>
 
-      <!-- ДНИ: не копятся, выбранный день отображается в единственной панели -->
+      <!-- ДНИ -->
       <h3>Дни</h3>
       <div class="row" style="margin-bottom:8px">
         <input type="date" id="dayPicker" />
@@ -68,13 +69,13 @@
         <button onclick="gotoPrevDay()">← Предыдущий</button>
         <button onclick="gotoNextDay()">Следующий →</button>
         <span class="spacer"></span>
-        <span class="note">Дни не копятся: редактируется только выбранная дата. Ниже — компактный список дней.</span>
+        <span class="note">Дни не копятся визуально: редактируется только выбранная дата. Ниже — компактная лента.</span>
       </div>
 
-      <!-- Компактная лента дней -->
+      <!-- ЛЕНТА ДНЕЙ -->
       <div id="daysBar" class="days-bar" style="margin-bottom:12px"></div>
 
-      <!-- ЕДИНСТВЕННАЯ ПАНЕЛЬ ДНЯ -->
+      <!-- ПАНЕЛЬ ВЫБРАННОГО ДНЯ -->
       <div id="dayPanel">
         <div class="row" style="margin-bottom:6px">
           <strong id="dayTitle">День не выбран</strong>
@@ -97,18 +98,16 @@
   </div>
 
   <script>
-    // --- storage key ---
-    const STORAGE_KEY = 'instaChallenge.v3';
+    const STORAGE_KEY = 'instaChallenge.v4'; // bump версия для чистого запуска
 
-    // --- state ---
     let state = {
       players: [], // [{name, score}]
-      // days: { [isoDate]: { data: { [playerName]: number|null }, submitted: boolean, winners: string[] } }
+      // days: { [isoDate]: { data: { [playerName]: number|null }, submitted: boolean, winners: string[], _submitting?: boolean } }
       days: {},
       activeDate: null
     };
 
-    // --- utils ---
+    // utils
     const $ = s => document.querySelector(s);
     const iso = d => d instanceof Date ? d.toISOString().slice(0,10) : String(d || '').slice(0,10);
     const todayISO = () => iso(new Date());
@@ -118,19 +117,13 @@
       return dt.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric', weekday:'short' });
     };
     const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    const load = () => {
-      try { const v = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (v && typeof v==='object') state = v; } catch(e){}
-    };
+    const load = () => { try { const v = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (v && typeof v==='object') state = v; } catch(e){} };
 
-    // --- init ---
     load();
     renderAll();
+    if (!$('#dayPicker').value) $('#dayPicker').value = state.activeDate || todayISO();
 
-    // ensure picker value
-    const picker = $('#dayPicker');
-    if (!picker.value) picker.value = state.activeDate || todayISO();
-
-    // --- renderers ---
+    // renderers
     function renderAll() {
       renderPlayers();
       renderScores();
@@ -164,18 +157,16 @@
     function renderDaysBar() {
       const bar = $('#daysBar');
       bar.innerHTML = '';
-      const dates = Object.keys(state.days).sort(); // ISO ascending
+      const dates = Object.keys(state.days).sort();
       dates.forEach(d => {
         const chip = document.createElement('button');
         chip.className = 'pill small';
         chip.textContent = d;
         chip.onclick = () => { state.activeDate = d; save(); renderAll(); };
         if (state.activeDate === d) chip.classList.add('active');
-        // badge inside
         const badge = document.createElement('span');
         badge.className = 'note';
-        const obj = state.days[d];
-        badge.textContent = obj.submitted ? '✓' : '•';
+        badge.textContent = state.days[d].submitted ? '✓' : '•';
         chip.appendChild(badge);
         bar.appendChild(chip);
       });
@@ -203,14 +194,13 @@
       title.textContent = `${fmtDate(state.activeDate)} (${state.activeDate})`;
 
       if (obj.submitted) {
-        badge.textContent = obj.winners && obj.winners.length ? `победители: ${obj.winners.join(', ')}` : 'подтверждён';
+        badge.textContent = obj.winners?.length ? `победители: ${obj.winners.join(', ')}` : 'подтверждён';
         badge.className = 'pill small';
       } else {
         badge.textContent = 'не подтверждён';
         badge.className = 'pill small muted';
       }
 
-      // single compact grid
       state.players.forEach(p => {
         const label = document.createElement('div');
         label.textContent = p.name;
@@ -245,14 +235,14 @@
       }
     }
 
-    // --- participants ---
+    // participants
     function addPlayer() {
       const el = $('#newPlayer');
       const name = (el.value || '').trim();
       if (!name) return;
       if (state.players.find(p => p.name.toLowerCase() === name.toLowerCase())) { alert('Такой участник уже есть'); return; }
       state.players.push({ name, score: 0 });
-      // ensure new name exists in all days
+      // sync with existing days
       Object.values(state.days).forEach(day => {
         if (!(name in day.data)) day.data[name] = day.submitted ? 0 : null;
       });
@@ -262,13 +252,13 @@
     }
 
     function clearPlayers() {
-      if (!confirm('Удалить всех участников? Дни останутся, но их данные обнулятся.')) return;
-      // wipe players and purge per-day data
+      if (!confirm('Удалить всех участников? Дни сохранятся, но их данные обнулятся.')) return;
       state.players = [];
       Object.values(state.days).forEach(day => {
         day.data = {};
         day.winners = [];
         day.submitted = false;
+        delete day._submitting;
       });
       save();
       renderAll();
@@ -281,7 +271,7 @@
       renderAll();
     }
 
-    // --- days ---
+    // days
     function createOrOpenDay() {
       if (state.players.length === 0) { alert('Добавьте участников'); return; }
       const dp = $('#dayPicker');
@@ -318,36 +308,66 @@
       save(); renderAll();
     }
 
+    // NEW: редактура дня — откат начисленных баллов и перевод в режим редактирования
     function enableEditActiveDay() {
       const d = state.activeDate;
       if (!d) return;
       const obj = state.days[d];
       if (!obj) return;
+      if (!obj.submitted) return; // и так редактируется
+
+      // Откатываем баллы, начисленные за этот день
+      if (Array.isArray(obj.winners)) {
+        obj.winners.forEach(name => {
+          const pl = state.players.find(p => p.name === name);
+          if (pl) pl.score = Math.max(0, (pl.score || 0) - 1);
+        });
+      }
+
+      // Сбрасываем статус дня
       obj.submitted = false;
       obj.winners = [];
+      delete obj._submitting;
+
       save();
-      renderActiveDayPanel();
+      renderScores();
+      renderActiveDayPanel(); // теперь кнопка "Подтвердить" снова активна
+      renderDaysBar();
     }
 
+    // защита от повторных подтверждений: ставим флаг и блокируем кнопку сразу
     function submitActiveDay() {
+      const btn = $('#submitBtn');
+      btn.disabled = true; // мгновенно блокируем от повторных кликов
+
       const d = state.activeDate;
       if (!d) return;
       const obj = state.days[d];
       if (!obj) return;
 
-      // validate all filled
+      if (obj._submitting) return;           // защита от многократных вызовов
+      if (obj.submitted) return;             // уже подтверждён — нечего делать
+      obj._submitting = true;
+
+      // Проверяем заполнение
       let ok = true;
       state.players.forEach(p => {
         const v = obj.data[p.name];
         if (v === null || Number.isNaN(v)) ok = false;
       });
-      if (!ok) { alert('Заполните минуты для всех участников'); return; }
+      if (!ok) {
+        alert('Заполните минуты для всех участников');
+        obj._submitting = false;
+        btn.disabled = false; // вернуть возможность после исправления
+        return;
+      }
 
-      // winners by minimum
+      // Находим победителей
       const vals = Object.values(obj.data);
       const minV = Math.min(...vals);
       const winners = Object.entries(obj.data).filter(([,v]) => v === minV).map(([name]) => name);
 
+      // Начисляем баллы
       winners.forEach(n => {
         const pl = state.players.find(p => p.name === n);
         if (pl) pl.score += 1;
@@ -355,17 +375,20 @@
 
       obj.submitted = true;
       obj.winners = winners;
+      obj._submitting = false;
+
       save();
 
-      alert(winners.length===1 ? `Победитель дня (${fmtDate(d)}): ${winners[0]}` :
-                                 `Победители дня (${fmtDate(d)}): ${winners.join(', ')}`);
+      alert(winners.length===1
+        ? `Победитель дня (${fmtDate(d)}): ${winners[0]}`
+        : `Победители дня (${fmtDate(d)}): ${winners.join(', ')}`);
 
       renderScores();
-      renderActiveDayPanel();
+      renderActiveDayPanel(); // здесь "Подтвердить" станет disabled, "Редактировать" — enabled
       renderDaysBar();
     }
 
-    // --- finish / payouts ---
+    // finish / payouts
     function finishChallenge() {
       if (!state.players.length) return;
       const maxScore = Math.max(...state.players.map(p => p.score));
