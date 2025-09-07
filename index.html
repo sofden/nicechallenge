@@ -114,6 +114,29 @@
   </div>
 
   <script>
+  const API_URL = 'https://script.google.com/macros/s/AKfycbzNZJeilNm_BPOADmQzSAJniKBLWwCo-Qwpga1R8U9Z7xSRmzmdcHlYWc8R6g9_tQax/exec';
+  async function saveRemote(stateObj) {
+    try {
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(stateObj)
+      });
+    } catch (e) {
+      console.error('Remote save failed:', e);
+    }
+  }
+
+async function loadRemote() {
+  try {
+    const res = await fetch(API_URL, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.error('Remote load failed:', e);
+    return null;
+  }
+}
     const STORAGE_KEY = 'instaChallenge.v5';
 
     let state = {
@@ -133,23 +156,41 @@
       const dt = new Date(isod+'T00:00:00');
       return dt.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric', weekday:'short' });
     };
-    const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    const load = () => { try { const v = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (v && typeof v==='object') state = v; } catch(e){} };
+    /** Локальная загрузка (на случай, если сеть недоступна) */
+    async function loadLocal() {
+      try {
+        const v = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (v && typeof v === 'object') state = v;
+      } catch (e) {}
+    }
 
-    load();
+    /** Гибкое сохранение: мгновенно в localStorage + отправка в Sheets с небольшим дебаунсом */
+    let _saveTimer = null;
+    function save() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+      clearTimeout(_saveTimer);
+      _saveTimer = setTimeout(() => { saveRemote(state); }, 300);
+    }
 
-    // init defaults
-    if (!state.startDate) state.startDate = todayISO();
-    ensureDaysUpToToday(); // авто-создание всех дней от старта до сегодня
-    if (!state.activeDate) state.activeDate = todayISO();
+    // Асинхронный старт: пробуем загрузить из Sheets, иначе — локальное
+    (async () => {
+      const remote = await loadRemote();
+      if (remote && typeof remote === 'object') {
+        state = remote;
+      } else {
+        await loadLocal();
+      }
 
-    // set inputs
-    const startPicker = $('#startPicker');
-    startPicker.value = state.startDate;
-    const dayPicker = $('#dayPicker');
-    dayPicker.value = state.activeDate;
+      // дальше всё как было
+      if (!state.startDate) state.startDate = todayISO();
+      ensureDaysUpToToday();
+      if (!state.activeDate) state.activeDate = todayISO();
 
-    renderAll();
+      document.getElementById('startPicker').value = state.startDate;
+      document.getElementById('dayPicker').value = state.activeDate;
+
+      renderAll();
+    })();
 
     // ---- core day helpers ----
     function ensureDay(d) {
